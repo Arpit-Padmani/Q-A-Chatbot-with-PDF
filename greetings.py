@@ -7,7 +7,7 @@ def get_llm_greeting(user_input):
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash-latest",
         temperature=0.8,
-        google_api_key="AIzaSyCIbUQQQ59a1L2f2BBxJCYH12FoWt1UI8g"
+        google_api_key=""
     )
     prompt = (
         f"User: {user_input}\n"

@@ -13,6 +13,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from htmlTemplate import  css,bot_template,user_template
+import uuid
 
 def get_pdf_text(pdf_docs):
     text = ""
@@ -72,7 +73,7 @@ def get_conversation_chain(vector):
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash-latest",  # Updated model name
         temperature=0.5,
-        google_api_key="AIzaSyAg8mZzVKPBycypr0_fh0sjGaZtzgcf_Ag"
+        google_api_key=""
     )
     # add duplicate key
     memory = ConversationBufferMemory(
@@ -82,18 +83,6 @@ def get_conversation_chain(vector):
                                                                retriever=vector.as_retriever(),
                                                                memory=memory)
     return conversation_chain
-    def msg_print(chat_placeholder):
-    if st.session_state.chat_history and len(st.session_state.chat_history) > 0:
-        with chat_placeholder.container():
-            for i, message in enumerate(reversed(st.session_state.chat_history)):
-                if i % 2 == 0:
-                    st.write(user_template.replace("{{MSG}}", message.content), unsafe_allow_html=True)
-                else:
-                    st.write(bot_template.replace("{{MSG}}", message.content), unsafe_allow_html=True)
-    else:
-        with chat_placeholder.container():
-            st.info("No active chat. Upload PDF to start.")
-
 def msg_print(chat_placeholder):
     if st.session_state.chat_history and len(st.session_state.chat_history) > 0:
         with chat_placeholder.container():
@@ -106,25 +95,64 @@ def msg_print(chat_placeholder):
         with chat_placeholder.container():
             st.info("No active chat. Upload PDF to start.")
 
+def handle_userinput(user_question,chat_placeholder):
+    if st.session_state.conversation is not None:
+        response = st.session_state.conversation({'question': user_question})
+        st.session_state.chat_history=response['chat_history']
+        msg_print(chat_placeholder)
+    else:
+        st.warning("Please upload and process a PDF first.")
 
 def main():
     load_dotenv()
     st.set_page_config(page_title="ChatBot With PDF", page_icon=":books:")
+    st.write(css,unsafe_allow_html=True)
+    st.session_state.chat_ended = False
+
+    if "uploader_key" not in st.session_state:
+        st.session_state["uploader_key"] = str(uuid.uuid4())
+
+    if 'conversation' not in st.session_state:
+        st.session_state.conversation = None
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history= None
 
     st.header("ChatBot With PDF :books:")
-    st.text_input('Ask Question about PDF')
+    user_quetion=st.text_input('Ask Question about PDF')
+    chat_placeholder = st.empty()
+
+    if user_quetion:
+        handle_userinput(user_quetion, chat_placeholder)
+    else:
+        msg_print(chat_placeholder)
+
 
     with st.sidebar:
+        col1, col2, col3 = st.columns([1, 1, 2])  # adjust weights for alignment
+        with col3:
+            if  st.button("🔚 End Chat"):
+                st.session_state.chat_history = None
+                st.session_state.conversation = None
+                st.session_state.chat_ended = True
+                st.session_state["uploader_key"] = str(uuid.uuid4())
+                chat_placeholder.empty()
+                st.toast("🔚 Chat has been successfully ended.", icon="⚠️")
+
         st.subheader("Your Documents")
-        pdf_docs = st.file_uploader('Upload PDF Or Documents', accept_multiple_files=True)
+        pdf_docs = st.file_uploader('Upload PDF Or Documents', accept_multiple_files=True,key=st.session_state["uploader_key"])
 
         if st.button('Process'):
             with st.spinner("Processing..."):
                 if pdf_docs:
                     # Extract and show text
-                    raw_txt = get_pdf_text(pdf_docs)
+                    # raw_txt = get_pdf_text(pdf_docs)
                     st.subheader("PDF Text / Tables")
-                    st.text(raw_txt)
+                    # st.text(raw_txt)
+                    raw_txt=get_pdf_text(pdf_docs)
+                    text_chunks=get_text_chunks(raw_txt)
+                    vector=get_vectorstore(text_chunks)
+                    st.session_state.conversation = get_conversation_chain(vector)
+                    st.success("PDFs Processed")
 
                     # Extract and display images
                     images = get_pdf_images(pdf_docs)

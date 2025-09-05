@@ -185,7 +185,7 @@ def get_conversation_chain(vector):
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash-latest",  # Updated model name
         temperature=0.5,
-        google_api_key=" "
+        google_api_key=""
     )
     # add duplicate key
     memory = ConversationBufferMemory(

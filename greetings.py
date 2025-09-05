@@ -16,7 +16,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from langchain.prompts import PromptTemplate
-
 from htmlTemplate import css, bot_template, user_template
 
 # ------------------------ Get Text from images ----------------------
@@ -100,13 +99,35 @@ def get_conversation_chain(vector):
         temperature=0.5,
         google_api_key=" "
     )
+
+    custom_template = """
+    You are a helpful assistant.
+
+    User Question:
+    {question}
+
+    Document Context:
+    {context}
+
+   Guidelines:
+    - If the context contains relevant info, answer directly using it.
+    - If the context is empty or unrelated, still answer naturally in 1–2 short sentences.
+    - Do NOT mention documents, AI, or being a language model.
+    - Keep the tone friendly and professional.
+    """
+
+    prompt = PromptTemplate(
+        template=custom_template,
+        input_variables=["question", "context"]
+    )
+
     return ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=vector.as_retriever(),
         memory=st.session_state.memory,
+        combine_docs_chain_kwargs={"prompt": prompt},   # ✅ custom prompt added
         return_source_documents=False
     )
-
 # ------------------------- Chat Handling -------------------------
 def msg_print(chat_placeholder):
     if st.session_state.chat_history:
@@ -141,7 +162,9 @@ def handle_userinput(user_question, chat_placeholder):
 # ------------------------- Streamlit App -------------------------
 def main():
     load_dotenv()
-    st.set_page_config(page_title="ChatBot with Greeting + PDF", page_icon="🤖")
+    st.set_page_config(
+    page_title="Smart ChatBot",
+    page_icon="🧠")
     st.write(css, unsafe_allow_html=True)
     st.header("🤖 Smart ChatBot (Greetings + PDF Q&A)")
 
@@ -172,6 +195,9 @@ def main():
 
     # Sidebar PDF upload
     with st.sidebar:
+        if st.button("❌ End Chat"):
+            st.session_state.clear()
+            st.rerun()
         st.subheader("📂 Upload PDFs")
         if "uploader_key" not in st.session_state:
             st.session_state["uploader_key"] = str(uuid.uuid4())
@@ -179,11 +205,21 @@ def main():
         pdf_docs = st.file_uploader(
             "Upload PDF files",
             accept_multiple_files=True,
+            type=["pdf"],
             key=st.session_state["uploader_key"]
         )
         if st.button("Process"):
             with st.spinner("Processing PDFs..."):
                 if pdf_docs:
+
+                    for file in pdf_docs:
+                        if not file.name.lower().endswith(".pdf"):
+                            st.error(f"❌ Invalid file type: {file.name}. Only PDF files are allowed.")
+                            st.session_state["uploader_key"] = str(uuid.uuid4())  # reset uploader
+                            st.rerun()
+
+
+
                     raw_txt,page_count  = get_pdf_text(pdf_docs)
                     st.write(page_count)
                     if page_count < 15:

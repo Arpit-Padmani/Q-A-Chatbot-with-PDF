@@ -8,6 +8,7 @@ from PyPDF2 import PdfReader
 import fitz
 from PIL import Image
 import pytesseract
+import os
 
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings import HuggingFaceEmbeddings
@@ -17,6 +18,9 @@ from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from langchain.prompts import PromptTemplate
 from htmlTemplate import css, bot_template, user_template
+
+load_dotenv()
+GOOGLE_API_KEY = os.getenv("GEMMINI_API_KEY")
 
 # ------------------------ Get Text from images ----------------------
 def extract_text_from_image(img_input):
@@ -30,13 +34,12 @@ def extract_text_from_image(img_input):
     text = pytesseract.image_to_string(img)
     return text.strip()
 
-
 # ------------------------- Greeting with LLM -------------------------
 def get_llm_greeting(user_input):
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash-latest",
         temperature=0.7,
-        google_api_key=" "   # 🔑 Replace with your Google API key
+        google_api_key=GOOGLE_API_KEY   
     )
     try:
         response = llm.invoke(user_input)
@@ -66,6 +69,7 @@ def get_pdf_text(pdf_docs):
                         text += row_text + "\n"
     return text,total_pages
 
+# ------------------------- PDF images -------------------------
 def get_pdf_images(pdf_docs, min_width=100, min_height=100):
     all_images = []
     for pdf in pdf_docs:
@@ -83,21 +87,24 @@ def get_pdf_images(pdf_docs, min_width=100, min_height=100):
                     all_images.append((f"{pdf.name}_page{page_index+1}_{img_index}", image))
     return all_images
 
+# ------------------------- Convert Texts into Small Chunks  -------------------------
 def get_text_chunks(raw_text):
     text_splitter = CharacterTextSplitter(
         separator="\n", chunk_size=1000, chunk_overlap=200, length_function=len
     )
     return text_splitter.split_text(raw_text)
 
+# ------------------------- get Vector stored in FAISS -------------------------
 def get_vectorstore(text_chunks):
     embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     return FAISS.from_texts(texts=text_chunks, embedding=embedding)
 
+# ------------------------- get conversaion chain or history -------------------------
 def get_conversation_chain(vector):
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash-latest",
         temperature=0.5,
-        google_api_key=" "
+        google_api_key=GOOGLE_API_KEY
     )
 
     custom_template = """
@@ -125,10 +132,11 @@ def get_conversation_chain(vector):
         llm=llm,
         retriever=vector.as_retriever(),
         memory=st.session_state.memory,
-        combine_docs_chain_kwargs={"prompt": prompt},   # ✅ custom prompt added
+        combine_docs_chain_kwargs={"prompt": prompt}, 
         return_source_documents=False
     )
-# ------------------------- Chat Handling -------------------------
+
+# ------------------------- All chat print or msg printing -------------------------
 def msg_print(chat_placeholder):
     if st.session_state.chat_history:
         with chat_placeholder.container():
@@ -138,9 +146,9 @@ def msg_print(chat_placeholder):
                 else:
                     st.write(bot_template.replace("{{MSG}}", msg["content"]), unsafe_allow_html=True)
 
+# ------------------------- handle user input or verify sue quetion -------------------------
 def handle_userinput(user_question, chat_placeholder):
     if st.session_state.conversation:
-        # PDF Q&A with memory
         response = st.session_state.conversation({"question": user_question})
         ai_answer = response.get("answer", "")
 
@@ -148,7 +156,6 @@ def handle_userinput(user_question, chat_placeholder):
         st.session_state.chat_history.append({"role": "assistant", "content": ai_answer})
 
     else:
-        # Greeting only
         response_text = get_llm_greeting(user_question)
 
         st.session_state.memory.chat_memory.add_user_message(user_question)
@@ -161,14 +168,12 @@ def handle_userinput(user_question, chat_placeholder):
 
 # ------------------------- Streamlit App -------------------------
 def main():
-    load_dotenv()
     st.set_page_config(
     page_title="Smart ChatBot",
     page_icon="🧠")
     st.write(css, unsafe_allow_html=True)
     st.header("🤖 Smart ChatBot (Greetings + PDF Q&A)")
 
-    # Initialize session state
     if "memory" not in st.session_state:
         st.session_state.memory = ConversationBufferMemory(
             memory_key="chat_history",
@@ -181,19 +186,16 @@ def main():
             {"role": "assistant", "content": "Hello 👋, you can upload a file and ask me questions about it."}
         ]
         
-        # Keep error message in memory
     if "error_msg" not in st.session_state:
         st.session_state.error_msg = ""
 
     chat_placeholder = st.empty()
     msg_print(chat_placeholder)
 
-    # User input
     user_input = st.text_input("You:", key="user_input")
     if user_input:
         handle_userinput(user_input, chat_placeholder)
 
-    # Sidebar PDF upload
     with st.sidebar:
         if st.button("❌ End Chat"):
             st.session_state.clear()
@@ -215,10 +217,8 @@ def main():
                     for file in pdf_docs:
                         if not file.name.lower().endswith(".pdf"):
                             st.error(f"❌ Invalid file type: {file.name}. Only PDF files are allowed.")
-                            st.session_state["uploader_key"] = str(uuid.uuid4())  # reset uploader
+                            st.session_state["uploader_key"] = str(uuid.uuid4())  
                             st.rerun()
-
-
 
                     raw_txt,page_count  = get_pdf_text(pdf_docs)
                     st.write(page_count)
@@ -228,20 +228,17 @@ def main():
                             f"The uploaded PDFs have **{page_count} pages**.\n\n"
                             f"Please upload files with at least **15 pages**."
                         )
-                        # Clear uploaded file
                         st.session_state["uploader_key"] = str(uuid.uuid4())
                         st.rerun()
                     else:
                         st.session_state.error_msg = ""
                         st.success(f"✅ PDFs processed successfully! Total Pages: {page_count}. Now ask me questions about them.")
-                        st.session_state["pdf_text"] = raw_txt  # ✅ keep extracted text
-
+                        st.session_state["pdf_text"] = raw_txt 
 
                     images = get_pdf_images(pdf_docs)
                     st.session_state["pdf_images"] = images
-                    st.session_state["image_count"] = len(images)   # 👈 Store count
+                    st.session_state["image_count"] = len(images) 
 
-                    # Extract text from images (if any)
                     image_info_text = ""
                     if images:
                         extracted_texts = []
@@ -249,7 +246,6 @@ def main():
                             extracted_texts.append(extract_text_from_image(img))
                         image_info_text = "\n".join(extracted_texts)
 
-                    # Combine PDF text + image text + image count info
                     full_text = raw_txt + "\n\n" + image_info_text
                     if st.session_state["image_count"] > 0:
                         full_text += f"\n\n[INFO] This PDF contains {st.session_state['image_count']} images."
@@ -257,7 +253,6 @@ def main():
                     text_chunks = get_text_chunks(full_text)
                     vector = get_vectorstore(text_chunks)
                     st.session_state.conversation = get_conversation_chain(vector)
-                    # st.success("✅ PDFs processed! Now ask me questions about them.")
 
                     if images:
                         st.subheader("Extracted Images")
@@ -265,7 +260,6 @@ def main():
                             st.image(img, caption=name)
                 else:
                     st.warning("Please upload at least one PDF!")
-        # Show error if exists
     if st.session_state.error_msg:
         st.error(st.session_state.error_msg)
 

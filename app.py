@@ -46,6 +46,7 @@ def closest_color(requested_color):
             min_distance = distance
             closest_name = name
     return closest_name
+
 def extract_text_colors(img_input):
     if isinstance(img_input, Image.Image):
         img_byte_arr = io.BytesIO()
@@ -184,7 +185,7 @@ def get_conversation_chain(vector):
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash-latest",  # Updated model name
         temperature=0.5,
-        google_api_key=""
+        google_api_key=" "
     )
     # add duplicate key
     memory = ConversationBufferMemory(
